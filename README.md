@@ -56,14 +56,26 @@ Extract video clips using natural language descriptions. Fully offline, no API c
 ## Installation
 
 ```bash
-# System dependencies (Ubuntu/Debian)
-sudo apt install ffmpeg
-
 # macOS
 brew install ffmpeg
 
-# Python dependencies
-pip install -r requirements.txt
+# Ubuntu/Debian
+sudo apt install ffmpeg
+```
+
+### Setup
+
+```bash
+git clone <repo> && cd video-clipper
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[fast]"
+```
+
+### Add to PATH (optional, for global access)
+
+```bash
+ln -s "$(pwd)/ve" /usr/local/bin/ve
 ```
 
 For GPU acceleration:
@@ -71,46 +83,61 @@ For GPU acceleration:
 # CUDA
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-# Apple Silicon
-pip install torch torchvision  # MPS support built-in
+# Apple Silicon (MPS support built-in)
+pip install torch torchvision
 ```
 
 ## Usage
 
-### CLI
+### Quick Start
 
 ```bash
-# One-shot: find and extract clips matching description
-python cli.py clip movie.mp4 "explosion scene" -o clips/
+# Extract a clip matching your description
+ve movie.mp4 "explosion scene"
+
+# That's it! Clips are saved to ./clips/
+```
+
+### CLI Commands
+
+```bash
+# Quick extract (default command)
+ve movie.mp4 "car chase"                     # Extract best match
+ve movie.mp4 "funny moment" -k 3             # Extract top 3 matches
+ve movie.mp4 "sunset" --full-scene           # Extract full scene
 
 # Build reusable index (for repeated queries)
-python cli.py index movie.mp4
+ve index movie.mp4
 
 # Search indexed video
-python cli.py search movie.mp4 "two people talking in kitchen"
+ve search movie.mp4 "two people talking"
+ve search movie.mp4 "kitchen scene" --show-text
 
-# Extract multiple clips
-python cli.py extract movie.mp4 \
-    -q "car chase" \
-    -q "romantic dialogue" \
-    -q "sunset establishing shot" \
-    -o clips/
+# Extract multiple clips at once
+ve extract movie.mp4 -q "car chase" -q "explosion" -q "dialogue"
+```
 
-# Interactive mode
-python cli.py interactive movie.mp4
+### Options
+
+```
+-o, --output DIR      Output directory (default: ./clips)
+-k, --top-k N         Number of clips to extract (default: 1)
+--full-scene          Extract full scene containing match
+--no-audio            Skip audio transcription (faster, visual-only)
+--reencode            Re-encode for precise cuts (slower but exact)
+--device DEVICE       Force device (cuda, mps, cpu)
 ```
 
 ### Python API
 
 ```python
 from pathlib import Path
-from extractor import VideoClipExtractor, VideoIndex
+from video_clipper import VideoClipExtractor, VideoIndex
 
-# Initialize
+# Initialize (auto-detects GPU)
 extractor = VideoClipExtractor(
     clip_model="ViT-B/32",     # or ViT-L/14 for better quality
     whisper_model="base",      # tiny/base/small/medium/large
-    device="cuda"              # or "cpu" or "mps"
 )
 
 # Build index
@@ -126,7 +153,7 @@ matches = index.search("person walking through a door", top_k=5)
 
 for match in matches:
     print(f"{match.start_time:.1f}s - {match.end_time:.1f}s (score: {match.score:.2f})")
-    
+
     # Extract clip
     extractor.extract_clip(
         video,
