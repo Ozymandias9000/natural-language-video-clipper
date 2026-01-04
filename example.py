@@ -4,7 +4,7 @@ Minimal example: extract clips from a video using natural language.
 """
 
 from pathlib import Path
-from extractor import VideoClipExtractor, VideoIndex
+from extractor_enhanced import VideoClipExtractor, VideoIndex
 
 def main():
     # Config
@@ -15,9 +15,9 @@ def main():
         "someone mentions money",
     ]
     OUTPUT_DIR = Path("./extracted_clips")
-    
-    # Initialize (use "cuda" or "mps" if available)
-    extractor = VideoClipExtractor(device="cpu")
+
+    # Initialize (GPU auto-detected, faster-whisper enabled by default)
+    extractor = VideoClipExtractor()
     
     # Build index (or load if exists)
     index_path = VIDEO_PATH.with_suffix('.vidx')

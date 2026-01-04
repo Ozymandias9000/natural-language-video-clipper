@@ -22,7 +22,9 @@ def cmd_index(args):
     extractor = EnhancedVideoClipExtractor(
         clip_model=args.clip_model,
         whisper_model=args.whisper_model,
-        device=args.device
+        device=args.device,
+        whisper_backend=args.whisper_backend,
+        batch_size=args.batch_size
     )
     
     index = EnhancedVideoIndex(args.video, extractor)
@@ -67,7 +69,9 @@ def cmd_search(args):
     extractor = EnhancedVideoClipExtractor(
         clip_model=args.clip_model,
         whisper_model=args.whisper_model,
-        device=args.device
+        device=args.device,
+        whisper_backend=args.whisper_backend,
+        batch_size=args.batch_size
     )
     
     # Load or build index
@@ -127,7 +131,9 @@ def cmd_extract(args):
     extractor = EnhancedVideoClipExtractor(
         clip_model=args.clip_model,
         whisper_model=args.whisper_model,
-        device=args.device
+        device=args.device,
+        whisper_backend=args.whisper_backend,
+        batch_size=args.batch_size
     )
     
     # Load or build index
@@ -192,7 +198,9 @@ def cmd_clip(args):
     extractor = EnhancedVideoClipExtractor(
         clip_model=args.clip_model,
         whisper_model=args.whisper_model,
-        device=args.device
+        device=args.device,
+        whisper_backend=args.whisper_backend,
+        batch_size=args.batch_size
     )
     
     # Build index
@@ -263,8 +271,8 @@ Examples:
     
     # Global options
     parser.add_argument(
-        "--device", default="cpu",
-        help="Device for ML models (cpu, cuda, mps)"
+        "--device", default=None,
+        help="Device for ML models (auto-detected if not specified: cuda, cpu, mps)"
     )
     parser.add_argument(
         "--clip-model", default="ViT-B/32",
@@ -273,6 +281,15 @@ Examples:
     parser.add_argument(
         "--whisper-model", default="base",
         help="Whisper model size (tiny, base, small, medium, large)"
+    )
+    parser.add_argument(
+        "--whisper-backend", default="faster-whisper",
+        choices=["faster-whisper", "whisper"],
+        help="Whisper backend (faster-whisper is 4-8x faster)"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=32,
+        help="Batch size for CLIP embeddings"
     )
     
     subparsers = parser.add_subparsers(dest="command", required=True)
