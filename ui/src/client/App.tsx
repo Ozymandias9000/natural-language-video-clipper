@@ -58,11 +58,33 @@ export default function App() {
     [api]
   );
 
-  // Placeholder search handler - will be wired to SearchBar component
+  // Search handler - supports comma-separated queries
   const handleSearch = useCallback(
     async (query: string) => {
-      const matches = await api.search(query, 10);
-      const newClips: Clip[] = matches.map((m: ClipMatch, i: number) => ({
+      const queries = query
+        .split(",")
+        .map((q) => q.trim())
+        .filter((q) => q.length > 0);
+
+      if (queries.length === 0) return;
+
+      // Search for each query and combine results
+      const allMatches: ClipMatch[] = [];
+      for (const q of queries) {
+        const matches = await api.search(q, 10);
+        allMatches.push(...matches);
+      }
+
+      // Dedupe by start time and sort by score
+      const seen = new Set<number>();
+      const uniqueMatches = allMatches.filter((m) => {
+        if (seen.has(m.start)) return false;
+        seen.add(m.start);
+        return true;
+      });
+      uniqueMatches.sort((a, b) => b.score - a.score);
+
+      const newClips: Clip[] = uniqueMatches.map((m: ClipMatch, i: number) => ({
         id: `clip-${i}-${m.start}`,
         start: m.start,
         end: m.end,
