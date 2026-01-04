@@ -135,7 +135,7 @@ export function Timeline({
   ];
 
   return (
-    <div className="w-full select-none pt-32">
+    <div className="w-full select-none pt-8">
       {/* Timeline container with thumbnails and overlays */}
       <div
         ref={containerRef}
@@ -152,19 +152,21 @@ export function Timeline({
               className="group h-full flex-shrink-0 relative"
               style={{
                 width: `${100 / Math.max(sortedThumbnails.length, 1)}%`,
-                transformOrigin: index === 0 ? "left bottom" : index === sortedThumbnails.length - 1 ? "right bottom" : "center bottom",
+                // Expand from left edge, right edge, or center based on position
+                transformOrigin: index === 0 ? "left center" : index === sortedThumbnails.length - 1 ? "right center" : "center center",
               }}
               whileHover={{
-                scale: 2.5,
+                scaleX: 4,
+                scaleY: 1.5,
                 zIndex: 50,
-                transition: { type: "spring", stiffness: 300, damping: 25 },
+                transition: { type: "spring", stiffness: 400, damping: 30 },
               }}
-              initial={{ scale: 1, zIndex: 1 }}
+              initial={{ scaleX: 1, scaleY: 1, zIndex: 1 }}
             >
               <img
                 src={dataUrl}
                 alt={`Frame at ${formatTime(timestamp)}`}
-                className="w-full h-full object-cover rounded-sm group-hover:shadow-xl group-hover:ring-2 group-hover:ring-amber-500/50"
+                className="w-full h-full object-cover rounded group-hover:shadow-xl group-hover:ring-2 group-hover:ring-amber-500/60"
                 draggable={false}
               />
               {/* Timestamp label on hover */}
