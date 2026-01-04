@@ -36,10 +36,10 @@ const app = new Elysia()
     })
   )
 
-  // Serve static files from the dist directory in production
+  // Serve static files from the dist/client directory in production
   .use(
     staticPlugin({
-      assets: join(import.meta.dir, "../../dist"),
+      assets: join(import.meta.dir, "../../dist/client"),
       prefix: "/",
     })
   )
