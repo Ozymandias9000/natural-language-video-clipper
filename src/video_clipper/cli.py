@@ -10,8 +10,11 @@ Usage:
 """
 
 import argparse
+import subprocess
 import sys
+import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
@@ -267,6 +270,42 @@ def cmd_clip(args):
         console.print(f"\n[bold green]Done![/bold green] Clips saved to: {output_dir}")
 
 
+def cmd_ui(args):
+    """Launch the web UI for a video."""
+    video_path = args.video.resolve()
+    if not video_path.exists():
+        console.print(f"[red]Error:[/red] Video file not found: {video_path}")
+        sys.exit(1)
+
+    # Find the ui/ directory at project root (../.. from src/video_clipper/)
+    ui_dir = Path(__file__).parent.parent.parent / "ui"
+    if not ui_dir.exists():
+        console.print(f"[red]Error:[/red] UI directory not found: {ui_dir}")
+        sys.exit(1)
+
+    port = args.port
+    url = f"http://localhost:{port}?video={quote(str(video_path))}"
+
+    console.print(f"[bold]Starting UI server...[/bold]")
+    console.print(f"[dim]Video:[/dim] {video_path}")
+    console.print(f"[dim]URL:[/dim] {url}")
+
+    if not args.no_browser:
+        webbrowser.open(url)
+
+    try:
+        subprocess.run(
+            ["bun", "run", "dev", "--port", str(port)],
+            cwd=ui_dir,
+            check=True,
+        )
+    except FileNotFoundError:
+        console.print("[red]Error:[/red] 'bun' not found. Please install bun: https://bun.sh")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Server stopped[/yellow]")
+
+
 def _add_global_options(parser):
     """Add global options shared by all commands."""
     parser.add_argument("--device", default=None, help="Compute device (cuda, mps, cpu; auto-detected)")
@@ -351,12 +390,19 @@ Examples:
     _add_global_options(p_clip)
     p_clip.set_defaults(func=cmd_clip)
 
+    # ui
+    p_ui = subparsers.add_parser("ui", help="Launch web UI for video editing")
+    p_ui.add_argument("video", type=Path, help="Video file")
+    p_ui.add_argument("--port", type=int, default=3000, help="Server port (default: 3000)")
+    p_ui.add_argument("--no-browser", action="store_true", help="Don't open browser automatically")
+    p_ui.set_defaults(func=cmd_ui)
+
     # Handle default command: if first arg looks like a video file, use clip
     args = sys.argv[1:]
     if args and not args[0].startswith("-"):
         first_arg = args[0]
         video_extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv"}
-        if first_arg not in {"index", "search", "extract", "clip"} and Path(first_arg).suffix.lower() in video_extensions:
+        if first_arg not in {"index", "search", "extract", "clip", "ui"} and Path(first_arg).suffix.lower() in video_extensions:
             args = ["clip"] + args
 
     parsed = parser.parse_args(args)
