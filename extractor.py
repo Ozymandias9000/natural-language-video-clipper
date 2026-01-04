@@ -15,8 +15,10 @@ import subprocess
 import json
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Literal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
+import torch
 
 
 @dataclass
@@ -66,15 +68,25 @@ class VideoClipExtractor:
         self,
         clip_model: str = "ViT-B/32",
         whisper_model: str = "base",
-        device: str = "cpu",
-        cache_dir: Optional[Path] = None
+        device: Optional[str] = None,
+        cache_dir: Optional[Path] = None,
+        whisper_backend: Literal["whisper", "faster-whisper"] = "faster-whisper",
+        batch_size: int = 32,
+        max_keyframe_workers: int = 8
     ):
+        # Auto-detect GPU if device not specified
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
         self.clip_model_name = clip_model
         self.whisper_model_name = whisper_model
         self.device = device
+        self.whisper_backend = whisper_backend
+        self.batch_size = batch_size
+        self.max_keyframe_workers = max_keyframe_workers
         self.cache_dir = Path(cache_dir) if cache_dir else Path("./cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Lazy load models
         self._clip_model = None
         self._clip_preprocess = None
@@ -98,10 +110,19 @@ class VideoClipExtractor:
     @property
     def whisper_model(self):
         if self._whisper_model is None:
-            import whisper
-            self._whisper_model = whisper.load_model(
-                self.whisper_model_name, device=self.device
-            )
+            if self.whisper_backend == "faster-whisper":
+                from faster_whisper import WhisperModel
+                compute_type = "float16" if self.device == "cuda" else "int8"
+                self._whisper_model = WhisperModel(
+                    self.whisper_model_name,
+                    device=self.device,
+                    compute_type=compute_type
+                )
+            else:
+                import whisper
+                self._whisper_model = whisper.load_model(
+                    self.whisper_model_name, device=self.device
+                )
         return self._whisper_model
 
     def detect_scenes(
@@ -155,99 +176,172 @@ class VideoClipExtractor:
         data = json.loads(result.stdout)
         return float(data["format"]["duration"])
     
+    def _extract_single_keyframe(
+        self,
+        video_path: Path,
+        shot: Shot,
+        output_dir: Path
+    ) -> Shot:
+        """Extract a single keyframe (for parallel execution)."""
+        output_path = output_dir / f"shot_{shot.index:04d}.jpg"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", str(shot.midpoint),
+                "-i", str(video_path),
+                "-vframes", "1", "-q:v", "2",
+                str(output_path)
+            ],
+            capture_output=True
+        )
+        shot.keyframe_path = output_path
+        return shot
+
     def extract_keyframes(
-        self, 
-        video_path: Path, 
+        self,
+        video_path: Path,
         shots: list[Shot],
         output_dir: Optional[Path] = None
     ) -> list[Shot]:
         """
         Extract a keyframe from each shot (frame at midpoint).
-        
+        Uses parallel extraction for speed.
+
         Returns shots with keyframe_path populated.
         """
         output_dir = output_dir or self.cache_dir / "keyframes"
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        for shot in shots:
-            output_path = output_dir / f"shot_{shot.index:04d}.jpg"
-            
-            # Extract frame at shot midpoint
-            subprocess.run(
-                [
-                    "ffmpeg", "-y", "-ss", str(shot.midpoint),
-                    "-i", str(video_path),
-                    "-vframes", "1", "-q:v", "2",
-                    str(output_path)
-                ],
-                capture_output=True
-            )
-            
-            shot.keyframe_path = output_path
-        
+
+        # Parallel extraction using thread pool
+        with ThreadPoolExecutor(max_workers=self.max_keyframe_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._extract_single_keyframe, video_path, shot, output_dir
+                ): shot
+                for shot in shots
+            }
+            for future in as_completed(futures):
+                future.result()  # Propagate any exceptions
+
         return shots
     
     def compute_visual_embeddings(self, shots: list[Shot]) -> list[Shot]:
-        """Compute CLIP embeddings for each shot's keyframe."""
-        import clip
+        """Compute CLIP embeddings for each shot's keyframe using batching."""
         from PIL import Image
-        import torch
-        
+
+        # Collect valid shots and preprocess images
+        valid_shots = []
+        images = []
         for shot in shots:
             if shot.keyframe_path and shot.keyframe_path.exists():
                 image = Image.open(shot.keyframe_path).convert("RGB")
-                image_input = self.clip_preprocess(image).unsqueeze(0).to(self.device)
-                
-                with torch.no_grad():
-                    embedding = self.clip_model.encode_image(image_input)
-                    embedding = embedding / embedding.norm(dim=-1, keepdim=True)
-                    shot.visual_embedding = embedding.cpu().numpy().squeeze()
-        
+                images.append(self.clip_preprocess(image))
+                valid_shots.append(shot)
+
+        if not images:
+            return shots
+
+        # Process in batches
+        for i in range(0, len(images), self.batch_size):
+            batch_images = images[i : i + self.batch_size]
+            batch_shots = valid_shots[i : i + self.batch_size]
+
+            image_input = torch.stack(batch_images).to(self.device)
+
+            with torch.no_grad():
+                embeddings = self.clip_model.encode_image(image_input)
+                embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+                embeddings = embeddings.cpu().numpy()
+
+            for shot, emb in zip(batch_shots, embeddings):
+                shot.visual_embedding = emb
+
         return shots
     
+    def _extract_audio(self, video_path: Path) -> Path:
+        """Pre-extract audio to WAV for faster Whisper processing."""
+        audio_path = self.cache_dir / f"{video_path.stem}_audio.wav"
+        if not audio_path.exists():
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", str(video_path),
+                    "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                    str(audio_path)
+                ],
+                capture_output=True
+            )
+        return audio_path
+
     def transcribe_audio(
-        self, 
+        self,
         video_path: Path,
         language: Optional[str] = None
     ) -> list[TranscriptSegment]:
         """
         Transcribe audio track using Whisper.
-        
+        Pre-extracts audio to WAV for faster processing.
+
         Returns list of timestamped transcript segments.
         """
-        result = self.whisper_model.transcribe(
-            str(video_path),
-            language=language,
-            word_timestamps=True
-        )
-        
+        # Pre-extract audio for faster processing
+        audio_path = self._extract_audio(video_path)
+
         segments = []
-        for seg in result["segments"]:
-            segments.append(TranscriptSegment(
-                start_time=seg["start"],
-                end_time=seg["end"],
-                text=seg["text"].strip()
-            ))
-        
+
+        if self.whisper_backend == "faster-whisper":
+            transcribe_segments, _ = self.whisper_model.transcribe(
+                str(audio_path),
+                language=language,
+                word_timestamps=True
+            )
+            for seg in transcribe_segments:
+                segments.append(TranscriptSegment(
+                    start_time=seg.start,
+                    end_time=seg.end,
+                    text=seg.text.strip()
+                ))
+        else:
+            result = self.whisper_model.transcribe(
+                str(audio_path),
+                language=language,
+                word_timestamps=True
+            )
+            for seg in result["segments"]:
+                segments.append(TranscriptSegment(
+                    start_time=seg["start"],
+                    end_time=seg["end"],
+                    text=seg["text"].strip()
+                ))
+
         return segments
-    
+
     def compute_text_embeddings(
-        self, 
+        self,
         segments: list[TranscriptSegment]
     ) -> list[TranscriptSegment]:
-        """Compute CLIP text embeddings for transcript segments."""
+        """Compute CLIP text embeddings for transcript segments using batching."""
         import clip
-        import torch
-        
-        for segment in segments:
-            if segment.text:
-                text_tokens = clip.tokenize([segment.text], truncate=True).to(self.device)
-                
-                with torch.no_grad():
-                    embedding = self.clip_model.encode_text(text_tokens)
-                    embedding = embedding / embedding.norm(dim=-1, keepdim=True)
-                    segment.embedding = embedding.cpu().numpy().squeeze()
-        
+
+        # Collect valid segments
+        valid_segments = [seg for seg in segments if seg.text]
+
+        if not valid_segments:
+            return segments
+
+        # Process in batches
+        for i in range(0, len(valid_segments), self.batch_size):
+            batch_segments = valid_segments[i : i + self.batch_size]
+            texts = [seg.text for seg in batch_segments]
+
+            text_tokens = clip.tokenize(texts, truncate=True).to(self.device)
+
+            with torch.no_grad():
+                embeddings = self.clip_model.encode_text(text_tokens)
+                embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+                embeddings = embeddings.cpu().numpy()
+
+            for seg, emb in zip(batch_segments, embeddings):
+                seg.embedding = emb
+
         return segments
     
     def assign_transcript_to_shots(
