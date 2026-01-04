@@ -77,10 +77,27 @@ const app = new Elysia()
     };
   })
 
-  .listen(PORT);
+  .listen({
+    port: PORT,
+    hostname: "0.0.0.0", // Listen on all interfaces for LAN access
+  });
 
-console.log(
-  `Video Clipper server running at http://localhost:${app.server?.port}`
-);
+// Get local IP for LAN access info
+const getLocalIP = () => {
+  const interfaces = require("os").networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return "localhost";
+};
+
+const localIP = getLocalIP();
+console.log(`Video Clipper server running at:`);
+console.log(`  Local:   http://localhost:${app.server?.port}`);
+console.log(`  Network: http://${localIP}:${app.server?.port}`);
 
 export type App = typeof app;
