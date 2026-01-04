@@ -20,12 +20,11 @@ interface UseApiReturn {
   getThumbnail: (time: number, width?: number) => Promise<string>;
   /** Get multiple thumbnails in batch */
   getThumbnails: (times: number[], width?: number) => Promise<string[]>;
-  /** Export selected clips to disk */
+  /** Export selected clips and trigger download */
   exportClips: (
     clips: { start: number; end: number }[],
-    stitch?: boolean,
-    outputDir?: string
-  ) => Promise<string[]>;
+    stitch?: boolean
+  ) => Promise<void>;
 }
 
 /**
@@ -90,7 +89,7 @@ export function useApi(): UseApiReturn {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/search`, {
+        const res = await fetch(`${API_BASE}/index/search`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query, top_k: topK }),
@@ -140,24 +139,28 @@ export function useApi(): UseApiReturn {
   const exportClips = useCallback(
     async (
       clips: { start: number; end: number }[],
-      stitch = false,
-      outputDir = "./clips"
-    ): Promise<string[]> => {
+      stitch = false
+    ): Promise<void> => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/export`, {
+        const res = await fetch(`${API_BASE}/export/clips`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clips,
-            stitch,
-            output_dir: outputDir,
-          }),
+          body: JSON.stringify({ clips, stitch }),
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        return data.outputs;
+
+        // Trigger downloads for each exported file
+        for (const output of data.outputs) {
+          const link = document.createElement("a");
+          link.href = output.url;
+          link.download = output.filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
       } catch (e) {
         const message = e instanceof Error ? e.message : "Unknown error";
         setError(message);
