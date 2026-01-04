@@ -66,8 +66,10 @@ class PythonBridge {
   }
 
   private async start(): Promise<void> {
+    // Use venv Python if available
+    const venvPython = join(projectRoot, "venv/bin/python");
     this.process = spawn({
-      cmd: ["python3", "-m", "src.video_clipper.bridge_server"],
+      cmd: [venvPython, "-m", "src.video_clipper.bridge_server"],
       cwd: projectRoot,
       stdin: "pipe",
       stdout: "pipe",
