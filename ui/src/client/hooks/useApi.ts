@@ -8,6 +8,8 @@ interface UseApiReturn {
   loading: boolean;
   /** Last error message, null if no error */
   error: string | null;
+  /** Find a video file by name and size */
+  findFile: (filename: string, size: number) => Promise<string | null>;
   /** Load a video file and retrieve metadata */
   loadVideo: (path: string) => Promise<VideoInfo>;
   /** Build or load the search index */
@@ -34,6 +36,24 @@ interface UseApiReturn {
 export function useApi(): UseApiReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const findFile = useCallback(
+    async (filename: string, size: number): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/video/find`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename, size }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.path || null;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
 
   const loadVideo = useCallback(async (path: string): Promise<VideoInfo> => {
     setLoading(true);
@@ -175,6 +195,7 @@ export function useApi(): UseApiReturn {
   return {
     loading,
     error,
+    findFile,
     loadVideo,
     buildIndex,
     getIndexStatus,

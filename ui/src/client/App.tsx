@@ -132,7 +132,11 @@ export default function App() {
       <div className="min-h-screen bg-charcoal-900 text-white flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-semibold mb-6">Video Clipper</h1>
-          <FileSelector onSelect={handleLoadVideo} loading={api.loading} />
+          <FileSelector
+            onSelect={handleLoadVideo}
+            onFindFile={api.findFile}
+            loading={api.loading}
+          />
           {api.error && (
             <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded max-w-md mx-auto">
               <p className="text-red-200 text-sm">{api.error}</p>
