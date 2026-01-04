@@ -22,6 +22,10 @@ import { exportRoutes } from "./routes/export";
 const PORT = 3000;
 
 const app = new Elysia()
+  // Log all requests
+  .onRequest(({ request }) => {
+    console.log(`[${request.method}] ${request.url}`);
+  })
   // Enable CORS for development - allows Vite dev server to access API
   .use(
     cors({

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/server/index.ts",
+    "dev:client": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -12,7 +13,6 @@
     "@elysiajs/static": "^1.0.0",
     "elysia": "^1.0.0",
     "motion": "^11.0.0",
-    "pybridge": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

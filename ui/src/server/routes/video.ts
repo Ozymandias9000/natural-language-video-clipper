@@ -18,8 +18,11 @@ export const videoRoutes = new Elysia({ prefix: "/api/video" })
   .post(
     "/load",
     async ({ body }) => {
-      const info = await clipper.load_video(body.path);
+      const decodedPath = decodeURIComponent(body.path);
+      console.log("[API] POST /api/video/load", decodedPath);
+      const info = await clipper.load_video(decodedPath);
       loadedVideoPath = info.path;
+      console.log("[API] Video loaded:", info.path);
       return info;
     },
     {
