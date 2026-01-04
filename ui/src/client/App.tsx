@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { VideoInfo, Clip, ClipMatch } from "./types";
 import { useApi } from "./hooks/useApi";
+import { FileSelector } from "./components/FileSelector";
 import { SearchBar } from "./components/SearchBar";
 import { VideoPlayer } from "./components/VideoPlayer";
 import { Timeline } from "./components/Timeline";
@@ -108,17 +109,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-charcoal-900 text-white flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold mb-4">Video Clipper</h1>
-          {api.loading ? (
-            <p className="text-charcoal-500">Loading video...</p>
-          ) : (
-            <p className="text-charcoal-500">
-              No video loaded. Run:{" "}
-              <code className="font-mono bg-charcoal-800 px-2 py-1 rounded">
-                ve ui /path/to/video.mp4
-              </code>
-            </p>
-          )}
+          <h1 className="text-2xl font-semibold mb-6">Video Clipper</h1>
+          <FileSelector onSelect={handleLoadVideo} loading={api.loading} />
           {api.error && (
             <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded max-w-md mx-auto">
               <p className="text-red-200 text-sm">{api.error}</p>
