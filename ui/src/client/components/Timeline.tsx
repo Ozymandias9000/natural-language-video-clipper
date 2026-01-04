@@ -135,7 +135,7 @@ export function Timeline({
   ];
 
   return (
-    <div className="w-full select-none pt-8">
+    <div className="w-full select-none pt-44">
       {/* Timeline container with thumbnails and overlays */}
       <div
         ref={containerRef}
@@ -147,33 +147,48 @@ export function Timeline({
         {/* Thumbnail strip */}
         <div className="absolute inset-0 flex">
           {sortedThumbnails.map(([timestamp, dataUrl], index) => (
-            <motion.div
+            <div
               key={timestamp}
               className="group h-full flex-shrink-0 relative"
               style={{
                 width: `${100 / Math.max(sortedThumbnails.length, 1)}%`,
-                // Expand from left edge, right edge, or center based on position
-                transformOrigin: index === 0 ? "left center" : index === sortedThumbnails.length - 1 ? "right center" : "center center",
               }}
-              whileHover={{
-                scaleX: 4,
-                scaleY: 1.5,
-                zIndex: 50,
-                transition: { type: "spring", stiffness: 400, damping: 30 },
-              }}
-              initial={{ scaleX: 1, scaleY: 1, zIndex: 1 }}
             >
+              {/* Thumbnail in strip */}
               <img
                 src={dataUrl}
                 alt={`Frame at ${formatTime(timestamp)}`}
-                className="w-full h-full object-cover rounded group-hover:shadow-xl group-hover:ring-2 group-hover:ring-amber-500/60"
+                className="w-full h-full object-cover"
                 draggable={false}
               />
-              {/* Timestamp label on hover */}
-              <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-xs text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                {formatTime(timestamp)}
-              </div>
-            </motion.div>
+              {/* Hover preview popup */}
+              <motion.div
+                className="absolute bottom-full mb-2 pointer-events-none"
+                style={{
+                  // Position: left-align for first few, right-align for last few, center for middle
+                  left: index < sortedThumbnails.length * 0.2 ? 0 : undefined,
+                  right: index > sortedThumbnails.length * 0.8 ? 0 : undefined,
+                  ...(index >= sortedThumbnails.length * 0.2 && index <= sortedThumbnails.length * 0.8
+                    ? { left: "50%", transform: "translateX(-50%)" }
+                    : {}),
+                }}
+                initial={{ opacity: 0, y: 10 }}
+                whileHover={{ opacity: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              >
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <img
+                    src={dataUrl}
+                    alt={`Preview at ${formatTime(timestamp)}`}
+                    className="w-64 h-auto rounded-lg shadow-2xl ring-2 ring-amber-500/60"
+                    draggable={false}
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-xs text-center py-1 rounded-b-lg">
+                    {formatTime(timestamp)}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           ))}
           {/* Fallback gradient when no thumbnails */}
           {sortedThumbnails.length === 0 && (
