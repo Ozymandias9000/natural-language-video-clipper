@@ -145,38 +145,36 @@ export function Timeline({
         onWheel={handleWheel}
       >
         {/* Thumbnail strip */}
-        <div className="absolute inset-0 flex">
-          {sortedThumbnails.map(([timestamp, dataUrl], index) => (
-            <div
-              key={timestamp}
-              className="group h-full flex-shrink-0 relative"
-              style={{
-                width: `${100 / Math.max(sortedThumbnails.length, 1)}%`,
-              }}
-            >
-              {/* Thumbnail in strip */}
-              <img
-                src={dataUrl}
-                alt={`Frame at ${formatTime(timestamp)}`}
-                className="w-full h-full object-cover"
-                draggable={false}
-              />
-              {/* Hover preview popup */}
-              <motion.div
-                className="absolute bottom-full mb-2 pointer-events-none"
+        <div className="absolute inset-0 flex overflow-visible">
+          {sortedThumbnails.map(([timestamp, dataUrl], index) => {
+            // Position popup: left-align for first 20%, right-align for last 20%, center for middle
+            const isLeftEdge = index < sortedThumbnails.length * 0.2;
+            const isRightEdge = index > sortedThumbnails.length * 0.8;
+
+            return (
+              <div
+                key={timestamp}
+                className="group h-full flex-shrink-0 relative"
                 style={{
-                  // Position: left-align for first few, right-align for last few, center for middle
-                  left: index < sortedThumbnails.length * 0.2 ? 0 : undefined,
-                  right: index > sortedThumbnails.length * 0.8 ? 0 : undefined,
-                  ...(index >= sortedThumbnails.length * 0.2 && index <= sortedThumbnails.length * 0.8
-                    ? { left: "50%", transform: "translateX(-50%)" }
-                    : {}),
+                  width: `${100 / Math.max(sortedThumbnails.length, 1)}%`,
                 }}
-                initial={{ opacity: 0, y: 10 }}
-                whileHover={{ opacity: 1, y: 0 }}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
               >
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                {/* Thumbnail in strip */}
+                <img
+                  src={dataUrl}
+                  alt={`Frame at ${formatTime(timestamp)}`}
+                  className="w-full h-full object-cover"
+                  draggable={false}
+                />
+                {/* Hover preview popup */}
+                <div
+                  className="absolute bottom-full mb-2 pointer-events-none z-50 opacity-0 group-hover:opacity-100 transition-all duration-200 ease-out"
+                  style={{
+                    left: isLeftEdge ? 0 : isRightEdge ? "auto" : "50%",
+                    right: isRightEdge ? 0 : "auto",
+                    transform: isLeftEdge || isRightEdge ? "translateY(0)" : "translateX(-50%)",
+                  }}
+                >
                   <img
                     src={dataUrl}
                     alt={`Preview at ${formatTime(timestamp)}`}
@@ -187,9 +185,9 @@ export function Timeline({
                     {formatTime(timestamp)}
                   </div>
                 </div>
-              </motion.div>
-            </div>
-          ))}
+              </div>
+            );
+          })}
           {/* Fallback gradient when no thumbnails */}
           {sortedThumbnails.length === 0 && (
             <div className="absolute inset-0 bg-gradient-to-r from-zinc-800 to-zinc-700" />
