@@ -168,17 +168,17 @@ export function Timeline({
                 />
                 {/* Hover preview popup */}
                 <div
-                  className="absolute bottom-full mb-2 pointer-events-none z-50 opacity-0 group-hover:opacity-100 transition-all duration-200 ease-out"
+                  className="absolute bottom-full mb-2 pointer-events-none z-50 opacity-0 group-hover:opacity-100 transition-all duration-200 ease-out w-64"
                   style={{
                     left: isLeftEdge ? 0 : isRightEdge ? "auto" : "50%",
                     right: isRightEdge ? 0 : "auto",
-                    transform: isLeftEdge || isRightEdge ? "translateY(0)" : "translateX(-50%)",
+                    transform: isLeftEdge || isRightEdge ? undefined : "translateX(-50%)",
                   }}
                 >
                   <img
                     src={dataUrl}
                     alt={`Preview at ${formatTime(timestamp)}`}
-                    className="w-64 h-auto rounded-lg shadow-2xl ring-2 ring-amber-500/60"
+                    className="w-full h-auto rounded-lg shadow-2xl ring-2 ring-amber-500/60"
                     draggable={false}
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-xs text-center py-1 rounded-b-lg">
