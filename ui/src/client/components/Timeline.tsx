@@ -135,32 +135,43 @@ export function Timeline({
   ];
 
   return (
-    <div className="w-full select-none">
+    <div className="w-full select-none pt-32">
       {/* Timeline container with thumbnails and overlays */}
       <div
         ref={containerRef}
-        className="relative h-20 bg-zinc-900 rounded-lg overflow-hidden cursor-pointer"
+        className="relative h-20 bg-zinc-900 rounded-lg overflow-visible cursor-pointer"
         style={{ transform: `scaleX(${zoomLevel})`, transformOrigin: "left" }}
         onMouseDown={handleMouseDown}
         onWheel={handleWheel}
       >
         {/* Thumbnail strip */}
         <div className="absolute inset-0 flex">
-          {sortedThumbnails.map(([timestamp, dataUrl]) => (
-            <div
+          {sortedThumbnails.map(([timestamp, dataUrl], index) => (
+            <motion.div
               key={timestamp}
-              className="h-full flex-shrink-0"
+              className="group h-full flex-shrink-0 relative"
               style={{
                 width: `${100 / Math.max(sortedThumbnails.length, 1)}%`,
+                transformOrigin: index === 0 ? "left bottom" : index === sortedThumbnails.length - 1 ? "right bottom" : "center bottom",
               }}
+              whileHover={{
+                scale: 2.5,
+                zIndex: 50,
+                transition: { type: "spring", stiffness: 300, damping: 25 },
+              }}
+              initial={{ scale: 1, zIndex: 1 }}
             >
               <img
                 src={dataUrl}
                 alt={`Frame at ${formatTime(timestamp)}`}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover rounded-sm group-hover:shadow-xl group-hover:ring-2 group-hover:ring-amber-500/50"
                 draggable={false}
               />
-            </div>
+              {/* Timestamp label on hover */}
+              <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-xs text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                {formatTime(timestamp)}
+              </div>
+            </motion.div>
           ))}
           {/* Fallback gradient when no thumbnails */}
           {sortedThumbnails.length === 0 && (
