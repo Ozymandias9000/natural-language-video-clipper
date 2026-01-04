@@ -184,6 +184,7 @@ $RECYCLE.BIN/
 
 # Project-specific
 cache/
+videos/
 clips/
 *.mp4
 *.avi
