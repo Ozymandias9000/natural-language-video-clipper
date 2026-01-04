@@ -49,7 +49,7 @@ class VideoIndex:
             batch_size: Batch size for embedding computation
             max_keyframe_workers: Parallel workers for keyframe extraction
         """
-        self.video_path = Path(video_path)
+        self.video_path = Path(video_path).resolve()
         self.cache_dir = Path(cache_dir) if cache_dir else Path("./cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -133,6 +133,7 @@ class VideoIndex:
         visual_weight: float = 0.6,
         audio_weight: float = 0.4,
         full_scene: bool = False,
+        expand: bool = False,
     ) -> list[ClipMatch]:
         """
         Search for clips matching a natural language query.
@@ -143,6 +144,7 @@ class VideoIndex:
             visual_weight: Weight for visual similarity (0-1)
             audio_weight: Weight for transcript similarity (0-1)
             full_scene: Expand matches to full scene boundaries
+            expand: Use LLM to expand query into variations (requires ANTHROPIC_API_KEY)
 
         Returns:
             List of ClipMatch objects sorted by relevance
@@ -159,6 +161,7 @@ class VideoIndex:
             visual_weight=visual_weight,
             audio_weight=audio_weight,
             full_scene=full_scene,
+            expand=expand,
         )
 
     def extract_clip(
@@ -175,6 +178,35 @@ class VideoIndex:
             output_path,
             start_time,
             end_time,
+            padding=padding,
+            reencode=reencode,
+        )
+
+    def stitch_clips(
+        self,
+        output_path: Path,
+        matches: list[ClipMatch],
+        padding: float = 0.5,
+        reencode: bool = False,
+    ) -> Path:
+        """
+        Stitch multiple clips into a single output file.
+
+        Args:
+            output_path: Destination file path
+            matches: List of ClipMatch objects to stitch (will be sorted chronologically)
+            padding: Seconds to add before/after each clip
+            reencode: If True, re-encode for frame-accurate cuts
+
+        Returns:
+            Path to the stitched output file
+        """
+        sorted_matches = sorted(matches, key=lambda m: m.start_time)
+        time_ranges = [(m.start_time, m.end_time) for m in sorted_matches]
+        return video.stitch_clips(
+            self.video_path,
+            output_path,
+            time_ranges,
             padding=padding,
             reencode=reencode,
         )

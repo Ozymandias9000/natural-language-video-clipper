@@ -4,11 +4,87 @@ Matches query embeddings against visual and audio embeddings,
 with support for merging overlapping results and scene expansion.
 """
 
+import os
+from typing import Optional
+
 import numpy as np
 
 from .models import ClipMatch, Shot, TranscriptSegment
 from .embeddings import CLIPEmbedder
 from . import scene as scene_module
+
+
+def expand_query(query: str, n_expansions: int = 5) -> list[str]:
+    """
+    Expand a terse query into multiple descriptive variations using an LLM.
+
+    Uses Claude via ANTHROPIC_API_KEY or OPENROUTER_API_KEY, otherwise returns just the original.
+
+    Args:
+        query: Original search query (e.g., "bread in oven")
+        n_expansions: Number of variations to generate
+
+    Returns:
+        List of query variations including the original
+    """
+    prompt = f"""Expand this video search query into {n_expansions} descriptive variations that would match video frames. Each should describe what the scene looks like visually.
+
+Query: "{query}"
+
+Return ONLY the variations, one per line, no numbering or extra text."""
+
+    # Try Anthropic first
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        try:
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=anthropic_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return _parse_expansions(response.content[0].text, query, n_expansions)
+        except Exception:
+            pass
+
+    # Try OpenRouter
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        try:
+            import httpx
+
+            response = httpx.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "anthropic/claude-sonnet-4",
+                    "max_tokens": 256,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            text = response.json()["choices"][0]["message"]["content"]
+            return _parse_expansions(text, query, n_expansions)
+        except Exception:
+            pass
+
+    return [query]
+
+
+def _parse_expansions(text: str, query: str, n_expansions: int) -> list[str]:
+    """Parse LLM response into list of query variations."""
+    variations = text.strip().split("\n")
+    variations = [v.strip() for v in variations if v.strip()]
+    # Always include original
+    if query not in variations:
+        variations.insert(0, query)
+    return variations[:n_expansions + 1]
 
 
 def search(
@@ -20,6 +96,7 @@ def search(
     visual_weight: float = 0.6,
     audio_weight: float = 0.4,
     full_scene: bool = False,
+    expand: bool = False,
 ) -> list[ClipMatch]:
     """
     Search for clips matching a natural language query.
@@ -36,11 +113,23 @@ def search(
         visual_weight: Weight for visual similarity (0-1)
         audio_weight: Weight for audio/transcript similarity (0-1)
         full_scene: If True, expand matches to full scene boundaries
+        expand: If True, use LLM to expand query into multiple variations
 
     Returns:
         List of ClipMatch objects sorted by relevance score
     """
-    query_embedding = embedder.embed_query(query)
+    # Expand query if requested (requires ANTHROPIC_API_KEY)
+    queries = expand_query(query) if expand else [query]
+
+    # Compute embeddings for all query variations
+    query_embeddings = [embedder.embed_query(q) for q in queries]
+
+    # Average embeddings if multiple queries
+    if len(query_embeddings) > 1:
+        query_embedding = np.mean(query_embeddings, axis=0)
+        query_embedding = query_embedding / np.linalg.norm(query_embedding)
+    else:
+        query_embedding = query_embeddings[0]
 
     matches = []
 

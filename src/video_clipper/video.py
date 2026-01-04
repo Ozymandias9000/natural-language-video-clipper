@@ -6,9 +6,9 @@ All operations are synchronous and raise exceptions on failure.
 
 import json
 import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
 
 from .models import Shot
 
@@ -147,4 +147,69 @@ def extract_clip(
         ]
 
     subprocess.run(cmd, capture_output=True, check=True)
+    return output_path
+
+
+def stitch_clips(
+    video_path: Path,
+    output_path: Path,
+    time_ranges: list[tuple[float, float]],
+    padding: float = 0.5,
+    reencode: bool = False,
+) -> Path:
+    """
+    Extract multiple clips and stitch them into a single output file.
+
+    Args:
+        video_path: Source video file
+        output_path: Destination file path
+        time_ranges: List of (start_time, end_time) tuples, should be sorted chronologically
+        padding: Seconds to add before/after each clip
+        reencode: If True, re-encode for frame-accurate cuts
+
+    Returns:
+        Path to the stitched output file
+    """
+    if not time_ranges:
+        raise ValueError("No time ranges provided for stitching")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        clip_paths = []
+
+        # Extract each clip to temp directory
+        for i, (start_time, end_time) in enumerate(time_ranges):
+            clip_path = temp_path / f"clip_{i:04d}.mp4"
+            extract_clip(
+                video_path,
+                clip_path,
+                start_time,
+                end_time,
+                padding=padding,
+                reencode=reencode,
+            )
+            clip_paths.append(clip_path)
+
+        # Create concat list file
+        concat_list = temp_path / "concat.txt"
+        with open(concat_list, "w") as f:
+            for clip_path in clip_paths:
+                f.write(f"file '{clip_path}'\n")
+
+        # Concatenate clips
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_list),
+                "-c", "copy",
+                str(output_path),
+            ],
+            capture_output=True,
+            check=True,
+        )
+
     return output_path

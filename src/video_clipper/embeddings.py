@@ -131,9 +131,38 @@ class CLIPEmbedder:
 
         return embeddings
 
-    def embed_query(self, query: str) -> np.ndarray:
-        """Compute embedding for a single query string."""
-        return self.embed_texts([query])[0]
+    def embed_query(self, query: str, use_templates: bool = True) -> np.ndarray:
+        """
+        Compute embedding for a single query string.
+
+        Args:
+            query: Natural language query
+            use_templates: If True, use CLIP-friendly prompt templates and
+                          average the embeddings for better retrieval
+
+        Returns:
+            Normalized embedding array
+        """
+        if not use_templates:
+            return self.embed_texts([query])[0]
+
+        # CLIP responds better to caption-like descriptions
+        templates = [
+            "{}",  # Original query
+            "a photo of {}",
+            "a video frame showing {}",
+            "a scene with {}",
+            "an image of {}",
+        ]
+
+        prompts = [t.format(query) for t in templates]
+        embeddings = self.embed_texts(prompts)
+
+        # Average and re-normalize
+        avg_embedding = np.mean(embeddings, axis=0)
+        avg_embedding = avg_embedding / np.linalg.norm(avg_embedding)
+
+        return avg_embedding
 
 
 def compute_shot_embeddings(shots: list[Shot], embedder: CLIPEmbedder) -> list[Shot]:

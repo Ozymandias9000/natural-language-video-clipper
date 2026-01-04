@@ -95,6 +95,7 @@ def cmd_search(args):
         visual_weight=args.visual_weight,
         audio_weight=1.0 - args.visual_weight,
         full_scene=args.full_scene,
+        expand=args.expand,
     )
 
     if not matches:
@@ -147,7 +148,7 @@ def cmd_extract(args):
 
         for query in args.queries:
             console.print(f"\n[bold]Query:[/bold] '{query}'")
-            matches = index.search(query, top_k=args.top_k, full_scene=args.full_scene)
+            matches = index.search(query, top_k=args.top_k, full_scene=args.full_scene, expand=args.expand)
 
             if not matches:
                 console.print("  [yellow]No matches found[/yellow]")
@@ -180,21 +181,34 @@ def cmd_extract(args):
 
 def cmd_clip(args):
     """One-shot: index and extract a single clip."""
-    index = _create_index(args, args.video)
-
     console.print(f"[bold]Processing:[/bold] {args.video.name}")
 
-    with console.status("[bold green]Building index...") as status:
+    index_path = args.video.with_suffix(".vidx")
+    if index_path.exists():
+        console.print(f"[dim]Loading existing index: {index_path}[/dim]")
+        index = VideoIndex.load(
+            index_path,
+            clip_model=args.clip_model,
+            whisper_model=args.whisper_model,
+            whisper_backend=args.whisper_backend,
+            device=args.device,
+            batch_size=args.batch_size,
+        )
+    else:
+        index = _create_index(args, args.video)
+        with console.status("[bold green]Building index...") as status:
 
-        def on_progress(msg):
-            status.update(msg)
+            def on_progress(msg):
+                status.update(msg)
 
-        index.build(transcribe=not args.no_audio, on_progress=on_progress)
+            index.build(transcribe=not args.no_audio, on_progress=on_progress)
+        index.save(index_path)
+        console.print(f"[dim]Index saved: {index_path}[/dim]")
 
     query = " ".join(args.query)
     console.print(f"\n[bold]Searching for:[/bold] '{query}'")
 
-    matches = index.search(query, top_k=args.top_k, full_scene=args.full_scene)
+    matches = index.search(query, top_k=args.top_k, full_scene=args.full_scene, expand=args.expand)
 
     if not matches:
         console.print("[red]No matches found.[/red]")
@@ -203,28 +217,54 @@ def cmd_clip(args):
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    console.print(f"\n[bold]Extracting {len(matches)} clips:[/bold]")
+    safe_name = "".join(c if c.isalnum() else "_" for c in query)[:40]
 
-    for i, match in enumerate(matches):
-        safe_name = "".join(c if c.isalnum() else "_" for c in query)[:40]
+    if args.stitch:
+        # Stitch all matches into one file
         suffix = "_scene" if args.full_scene else ""
-        output_path = output_dir / f"{safe_name}{suffix}_{i:02d}.mp4"
+        output_path = output_dir / f"{safe_name}{suffix}_stitched.mp4"
 
-        duration = match.end_time - match.start_time
-        console.print(
-            f"  [{i + 1}/{len(matches)}] {format_timestamp(match.start_time)} - "
-            f"{format_timestamp(match.end_time)} ({duration:.1f}s) > {output_path.name}"
-        )
+        console.print(f"\n[bold]Stitching {len(matches)} clips:[/bold]")
+        sorted_matches = sorted(matches, key=lambda m: m.start_time)
+        for i, match in enumerate(sorted_matches):
+            duration = match.end_time - match.start_time
+            console.print(
+                f"  [{i + 1}/{len(matches)}] {format_timestamp(match.start_time)} - "
+                f"{format_timestamp(match.end_time)} ({duration:.1f}s, score: {match.score:.2f})"
+            )
 
-        index.extract_clip(
-            output_path,
-            match.start_time,
-            match.end_time,
-            padding=args.padding,
-            reencode=args.reencode,
-        )
+        with console.status("[bold green]Stitching clips..."):
+            index.stitch_clips(
+                output_path,
+                matches,
+                padding=args.padding,
+                reencode=args.reencode,
+            )
 
-    console.print(f"\n[bold green]Done![/bold green] Clips saved to: {output_dir}")
+        console.print(f"\n[bold green]Done![/bold green] Stitched clip saved to: {output_path}")
+    else:
+        # Extract individual clips
+        console.print(f"\n[bold]Extracting {len(matches)} clips:[/bold]")
+
+        for i, match in enumerate(matches):
+            suffix = "_scene" if args.full_scene else ""
+            output_path = output_dir / f"{safe_name}{suffix}_{i:02d}.mp4"
+
+            duration = match.end_time - match.start_time
+            console.print(
+                f"  [{i + 1}/{len(matches)}] {format_timestamp(match.start_time)} - "
+                f"{format_timestamp(match.end_time)} ({duration:.1f}s) > {output_path.name}"
+            )
+
+            index.extract_clip(
+                output_path,
+                match.start_time,
+                match.end_time,
+                padding=args.padding,
+                reencode=args.reencode,
+            )
+
+        console.print(f"\n[bold green]Done![/bold green] Clips saved to: {output_dir}")
 
 
 def _add_global_options(parser):
@@ -279,6 +319,7 @@ Examples:
     p_search.add_argument("--visual-weight", type=float, default=0.6, help="Visual vs audio weight (0-1)")
     p_search.add_argument("--full-scene", action="store_true", help="Return full scenes")
     p_search.add_argument("--show-text", action="store_true", help="Show matched transcript")
+    p_search.add_argument("--expand", action="store_true", help="Use LLM to expand query (requires ANTHROPIC_API_KEY)")
     _add_global_options(p_search)
     p_search.set_defaults(func=cmd_search)
 
@@ -291,6 +332,7 @@ Examples:
     p_extract.add_argument("--full-scene", action="store_true", help="Extract full scenes")
     p_extract.add_argument("--padding", type=float, default=0.5, help="Padding seconds")
     p_extract.add_argument("--reencode", action="store_true", help="Re-encode for precise cuts")
+    p_extract.add_argument("--expand", action="store_true", help="Use LLM to expand query (requires ANTHROPIC_API_KEY)")
     _add_global_options(p_extract)
     p_extract.set_defaults(func=cmd_extract)
 
@@ -299,11 +341,13 @@ Examples:
     p_clip.add_argument("video", type=Path, help="Video file")
     p_clip.add_argument("query", nargs="+", help="Clip description")
     p_clip.add_argument("-o", "--output", default="./clips", help="Output directory")
-    p_clip.add_argument("-k", "--top-k", type=int, default=1, help="Number of clips")
+    p_clip.add_argument("-k", "--top-k", type=int, default=5, help="Number of clips")
     p_clip.add_argument("--full-scene", action="store_true", help="Extract full scenes")
     p_clip.add_argument("--padding", type=float, default=0.5, help="Padding seconds")
     p_clip.add_argument("--reencode", action="store_true", help="Re-encode for precise cuts")
     p_clip.add_argument("--no-audio", action="store_true", help="Skip transcription")
+    p_clip.add_argument("--stitch", action="store_true", help="Stitch top-k matches into one file")
+    p_clip.add_argument("--expand", action="store_true", help="Use LLM to expand query (requires ANTHROPIC_API_KEY)")
     _add_global_options(p_clip)
     p_clip.set_defaults(func=cmd_clip)
 
